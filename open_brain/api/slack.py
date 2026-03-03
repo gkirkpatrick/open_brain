@@ -3,6 +3,8 @@ import hashlib
 import hmac
 import json
 import time
+import uuid
+from datetime import datetime, timezone
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request
@@ -70,8 +72,6 @@ async def slack_webhook(request: Request):
 
 async def _process_slack_message(text: str, event: dict):
     """Process a Slack message: generate embedding, extract metadata, store."""
-    import uuid
-    from datetime import datetime, timezone
 
     embedding, metadata = await asyncio.gather(
         generate_embedding(text),
@@ -96,7 +96,7 @@ async def _process_slack_message(text: str, event: dict):
         text,
         embedding_str,
         "slack",
-        metadata,
+        json.dumps(metadata),
         now,
     )
 

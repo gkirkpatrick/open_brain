@@ -1,0 +1,142 @@
+#!/usr/bin/env bash
+# CLI for capturing and searching thoughts via Open Brain
+# Usage:
+#   brain some thought I want to capture
+#   brain -s query to search for
+#   brain -l                          # list recent thoughts
+#   brain --stats                     # show stats
+#
+# Requires: BRAIN_KEY env var set to your Open Brain access key
+
+set -euo pipefail
+
+BRAIN_URL="${BRAIN_URL:-https://brain.eventzombie.com}"
+
+if [ -z "${BRAIN_KEY:-}" ]; then
+    echo "Error: BRAIN_KEY environment variable not set" >&2
+    exit 1
+fi
+
+# Colors
+GREEN='\033[0;32m'
+CYAN='\033[0;36m'
+DIM='\033[0;90m'
+NC='\033[0m'
+
+usage() {
+    echo "Usage:"
+    echo "  brain <thought>          Capture a new thought"
+    echo "  brain -s <query>         Search thoughts semantically"
+    echo "  brain -l [--days N]      List recent thoughts"
+    echo "  brain --stats            Show thought statistics"
+    echo "  brain --health           Check service health"
+}
+
+capture() {
+    local content="$*"
+    local response
+    response=$(curl -sS -X POST "$BRAIN_URL/api/thoughts" \
+        -H "Authorization: Bearer $BRAIN_KEY" \
+        -H "Content-Type: application/json" \
+        -d "$(jq -n --arg c "$content" '{content: $c}')")
+
+    local type topics summary
+    type=$(echo "$response" | jq -r '.metadata.type // "unknown"')
+    topics=$(echo "$response" | jq -r '.metadata.topics // [] | join(", ")')
+    summary=$(echo "$response" | jq -r '.metadata.summary // empty')
+
+    echo -e "${GREEN}Captured${NC} as ${CYAN}$type${NC}"
+    [ -n "$topics" ] && echo -e "${DIM}Topics:${NC} $topics"
+    [ -n "$summary" ] && echo -e "${DIM}Summary:${NC} $summary"
+
+    local actions
+    actions=$(echo "$response" | jq -r '.metadata.action_items // [] | .[]')
+    if [ -n "$actions" ]; then
+        echo -e "${DIM}Action items:${NC}"
+        echo "$actions" | while read -r item; do
+            echo "  - $item"
+        done
+    fi
+}
+
+search() {
+    local query="$*"
+    local response
+    response=$(curl -sS "$BRAIN_URL/api/thoughts?$(urlencode "q=$query")" \
+        -H "Authorization: Bearer $BRAIN_KEY")
+
+    local count
+    count=$(echo "$response" | jq 'length')
+
+    if [ "$count" -eq 0 ]; then
+        echo "No matching thoughts found."
+        return
+    fi
+
+    echo -e "Found ${GREEN}$count${NC} thoughts:"
+    echo ""
+    echo "$response" | jq -r '.[] | "[\(.created_at[:10])] (sim: \(.similarity)) \(.content)"'
+}
+
+list_thoughts() {
+    local params=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --days) params="${params}&days=$2"; shift 2 ;;
+            --type) params="${params}&type=$2"; shift 2 ;;
+            *) shift ;;
+        esac
+    done
+
+    local response
+    response=$(curl -sS "$BRAIN_URL/api/thoughts?limit=20${params}" \
+        -H "Authorization: Bearer $BRAIN_KEY")
+
+    local count
+    count=$(echo "$response" | jq 'length')
+
+    if [ "$count" -eq 0 ]; then
+        echo "No thoughts found."
+        return
+    fi
+
+    echo -e "${GREEN}$count${NC} recent thoughts:"
+    echo ""
+    echo "$response" | jq -r '.[] | "[\(.created_at[:10])] (\(.metadata.type // "?")) \(.content[:120])"'
+}
+
+show_stats() {
+    local response
+    response=$(curl -sS "$BRAIN_URL/api/thoughts/stats" \
+        -H "Authorization: Bearer $BRAIN_KEY")
+    echo "$response" | jq '.'
+}
+
+# URL encode helper
+urlencode() {
+    python3 -c "import urllib.parse; print(urllib.parse.urlencode(dict(item.split('=', 1) for item in '''$1'''.split('&') if item)))"
+}
+
+# Main
+case "${1:-}" in
+    -h|--help|"")
+        usage
+        ;;
+    -s|--search)
+        shift
+        search "$@"
+        ;;
+    -l|--list)
+        shift
+        list_thoughts "$@"
+        ;;
+    --stats)
+        show_stats
+        ;;
+    --health)
+        curl -sS "$BRAIN_URL/health" | jq '.'
+        ;;
+    *)
+        capture "$@"
+        ;;
+esac

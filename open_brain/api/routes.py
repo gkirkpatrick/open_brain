@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -56,7 +57,7 @@ async def create_thought(body: ThoughtCreate):
         body.content,
         embedding_str,
         body.source,
-        metadata,
+        json.dumps(metadata),
         now,
     )
 

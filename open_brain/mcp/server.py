@@ -1,4 +1,5 @@
 import asyncio
+import json
 import uuid
 from datetime import datetime, timezone
 
@@ -194,7 +195,7 @@ async def capture_thought(content: str) -> str:
         content,
         embedding_str,
         "mcp",
-        metadata,
+        json.dumps(metadata),
         now,
     )
 

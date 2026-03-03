@@ -14,6 +14,13 @@ from open_brain.services.metadata import extract_metadata
 router = APIRouter(prefix="/api", dependencies=[Depends(verify_access_key)])
 
 
+def _parse_meta(val):
+    """Parse metadata from DB — may be dict or JSON string."""
+    if isinstance(val, str):
+        return json.loads(val)
+    return val or {}
+
+
 class ThoughtCreate(BaseModel):
     content: str
     source: str = "api"
@@ -103,7 +110,7 @@ async def list_thoughts(
             {
                 "id": str(r["id"]),
                 "content": r["content"],
-                "metadata": r["metadata"],
+                "metadata": _parse_meta(r["metadata"]),
                 "similarity": round(float(r["similarity"]), 4),
                 "created_at": r["created_at"].isoformat(),
             }
@@ -152,7 +159,7 @@ async def list_thoughts(
             "id": str(r["id"]),
             "content": r["content"],
             "source": r["source"],
-            "metadata": r["metadata"],
+            "metadata": _parse_meta(r["metadata"]),
             "created_at": r["created_at"].isoformat(),
         }
         for r in rows
